@@ -42,6 +42,7 @@ td:first-child,th:first-child{text-align:left}
 <button id="reset-btn">&#10005; Reset drawing</button>
 <button id="marker-btn">&#128205; Add marker</button>
 <button id="ring-btn">&#9678; Flight rings</button>
+<button id="share-btn">&#128279; Share link</button>
 <button id="poly-btn">&#9634; Region volumes</button>
 <span style="font-size:12px;color:var(--muted)">Speed mode:</span>
 <button class="spd on" data-s="0">Fly 12 m/s</button>
@@ -223,11 +224,37 @@ function paintPal(){document.querySelectorAll('#mk-colors button').forEach((b,i)
 paintPal();
 document.getElementById('ring-btn').onclick=e=>{showRings=!showRings;e.target.classList.toggle('on',showRings);draw();};
 document.querySelectorAll('.spd').forEach(b=>b.onclick=()=>{spd=+b.dataset.s;document.querySelectorAll('.spd').forEach(x=>x.classList.toggle('on',x===b));updatePanel();});
+function encState(){return JSON.stringify({p:path.map(q=>[Math.round(q.x*10)/10,Math.round(q.y*10)/10]),
+ m:markers.map(k=>[Math.round(k.x*10)/10,Math.round(k.y*10)/10,k.label,k.color||'#e65100',k.icon||'']),
+ o:[spd,showRings?1:0,showPoly?1:0,bgcOn?1:0,document.body.classList.contains('light')?1:0]});}
+function b64u(bytes){let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function b64ud(t){const s=atob(t.replace(/-/g,'+').replace(/_/g,'/'));const by=new Uint8Array(s.length);for(let i=0;i<s.length;i++)by[i]=s.charCodeAt(i);return by;}
+async function makeShare(){const j=encState();let h;
+ if(window.CompressionStream){try{const cs=new Blob([j]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+   h='d'+b64u(new Uint8Array(await new Response(cs).arrayBuffer()));}catch(e){h='u'+b64u(new TextEncoder().encode(j));}}
+ else h='u'+b64u(new TextEncoder().encode(j));
+ const url=location.origin+location.pathname+'#s='+h;
+ history.replaceState(null,'','#s='+h);return url;}
+async function loadShare(){const m=(location.hash||'').match(/s=([A-Za-z0-9\-_]+)/);if(!m)return;
+ const t=m[1];let j;
+ try{
+  if(t[0]==='d'&&window.DecompressionStream){const ds=new Blob([b64ud(t.slice(1))]).stream().pipeThrough(new DecompressionStream('deflate-raw'));j=await new Response(ds).text();}
+  else j=new TextDecoder().decode(b64ud(t.slice(1)));
+  const o=JSON.parse(j);
+  if(Array.isArray(o.p))path=o.p.map(a=>({x:+a[0],y:+a[1]}));
+  if(Array.isArray(o.m))markers=o.m.map(a=>({x:+a[0],y:+a[1],label:String(a[2]??'Marker'),color:a[3]||'#e65100',icon:a[4]||''}));
+  if(Array.isArray(o.o)){spd=o.o[0]|0;showRings=!!o.o[1];showPoly=!!o.o[2];bgcOn=o.o[3]===undefined?true:!!o.o[3];
+   document.querySelectorAll('.spd').forEach(x=>x.classList.toggle('on',+x.dataset.s===spd));
+   document.body.classList.toggle('light',!!o.o[4]);}
+ }catch(e){console.warn('share link parse failed',e);}}
+document.getElementById('share-btn').onclick=async e=>{const btn=e.target;const url=await makeShare();
+ try{await navigator.clipboard.writeText(url);btn.textContent='\u2713 copied';}catch(err){prompt('Copy this share link:',url);btn.textContent='\u2713 shown';}
+ setTimeout(()=>btn.textContent='\ud83d\udd17 Share link',3000);};
 const tb=document.getElementById('theme-btn');
 function applyTheme(){tb.textContent=document.body.classList.contains('light')?'\uD83C\uDF19 Dark':'\u2600 Light';}
 tb.onclick=()=>{document.body.classList.toggle('light');localStorage.setItem('a2-abyss-theme',document.body.classList.contains('light')?'l':'d');applyTheme();};
 if(localStorage.getItem('a2-abyss-theme')=='l')document.body.classList.add('light');
-applyTheme();draw();
+applyTheme();loadShare().finally(()=>{applyTheme();draw();updatePanel();});
 </script>
 </body>
 </html>

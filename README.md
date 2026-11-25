@@ -1,6 +1,6 @@
 # Abyss Planner (alpha)
 
-A self-contained, no-build route & travel-time planner for **Aion 2's Abyss — Reshanta A** (Global, Nov 2026 client). Single HTML file + one map image; open it anywhere or serve it with GitHub Pages.
+A self-contained, no-build route & travel-time planner for **Aion 2's Abyss — Reshanta A** (Global, Nov 2026 client). No installs, no accounts — just open the page.
 
 ![screenshot placeholder](reshanta_client_raw.png)
 
@@ -19,14 +19,15 @@ Shows the game's **own world-map artwork** (extracted from the client's sector t
 | **Markers** | "Add marker" mode drops persistent pins with a custom label, coordinates below, **8 colors × 8 icons** (dot, square, triangle, diamond, star, flag, loot, danger). Click a marker to rename, right-click (or alt+click) to delete. |
 | **Coordinates** | Hover readout in meters (map center = 0,0); gridlines every 100 m / 500 m. |
 | **Light & dark themes** | Sepia-paper light mode and a dark mode; choice is remembered. |
+| **Share links** | 🔗 Share link compresses your route, markers (labels/colors/icons) and all settings into the URL itself — recipients open it and see exactly your layout. No backend, no accounts. |
 
 ## How to use
 
-1. Open `index.html` in any modern browser (works from `file://` too — keep `reshanta_client_raw.png` next to it).
-2. Click the map to start a route → the **Route** and **Estimated time** panels update live; pick a speed mode with the buttons.
-3. Drag any dropped point to fine-tune it.
-4. **◉ Flight rings** — turn on to visualize rings and apply ring boosts to the time estimates.
-5. **📍 Add marker** — style it in the revealed picker, then click to place. Markers persist in your browser (localStorage) and are scoped to the site/origin — they don't sync between devices.
+1. Click the map to start a route → the **Route** and **Estimated time** panels update live; pick a speed mode with the buttons.
+2. Drag any dropped point to fine-tune it.
+3. **◉ Flight rings** — turn on to visualize rings and apply ring boosts to the time estimates.
+4. **📍 Add marker** — style it in the revealed picker, then click to place. Markers persist in your browser (localStorage) and are scoped to the site/origin — they don't sync between devices.
+5. **🔗 Share link** — copies a URL with your entire board encoded in it. Anyone opening the link gets your route, markers and toggles; from there they can edit freely without changing your original.
 
 ## Data & provenance
 
@@ -34,10 +35,6 @@ Shows the game's **own world-map artwork** (extracted from the client's sector t
 - **Ring positions** — community mapping (shugo.gg), ~35 m RMS agreement with client coordinates (PLAYER TEST).
 - **Ring boost ×1.5 and 40 m trigger radius** — modelled from community observation, **UNVERIFIED**: the client ships no ring speed field. Tune to your own measurement if you have one.
 - **FP cost rates** — ratios (1 : 2 : 8 for fly/sprint/dash) are GAME DATA; the absolute scale is **UNVERIFIED**.
-
-## Deploying to GitHub Pages
-
-Push `index.html`, `reshanta_client_raw.png`, and this README to the repo root → **Settings → Pages → Deploy from a branch**. No build step, no dependencies, no network calls.
 
 ## Files
 
