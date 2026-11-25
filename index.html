@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Abyss Planner (alpha)</title>
+<style>
+:root{--fg:#e8e4da;--muted:#8f8a7d;--acc:#c77700;--bd:#3a3833;--card:#171613;--page:transparent}
+body.light{--fg:#3b3427;--muted:#8a7f6a;--acc:#9a6b1f;--bd:#d9cfae;--card:#faf6ea}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-family,system-ui,sans-serif);color:var(--fg);background:var(--page)}
+.wrap{padding:14px}
+h1{font-size:17px;margin:0 0 2px;font-weight:650}
+.sub{font-size:12px;color:var(--muted);margin-bottom:8px}
+.row{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center}
+button{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
+button.on{border-color:var(--acc);color:var(--acc);font-weight:650}
+#theme-btn{position:fixed;top:8px;right:10px;z-index:5;font-size:12px;padding:4px 10px;border-radius:14px}
+svg{width:100%;height:auto;display:block;background:var(--card);border:1px solid var(--bd);border-radius:12px;cursor:crosshair}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+.panel{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;margin-top:8px}
+.panel .box{border:1px solid var(--bd);border-radius:10px;padding:8px 12px;background:var(--card);min-width:190px}
+.panel h3{margin:0 0 5px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600}
+.panel b{color:var(--acc)}
+table{border-collapse:collapse;font-size:12.5px}
+td,th{padding:2px 10px 2px 0;text-align:right}
+th{color:var(--muted);font-weight:600;font-size:11px}
+td:first-child,th:first-child{text-align:left}
+.note{font-size:11px;color:var(--muted);margin-top:4px}
+.cal label{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-right:10px}
+.cal input[type=range]{width:110px;accent-color:var(--acc)}
+</style>
+</head>
+<body>
+<button id="theme-btn">&#9728; Light</button>
+<div class="wrap">
+<h1>Abyss Planner (alpha)</h1>
+<div class="sub">Click the map to drop waypoints &#183; click-drag a waypoint to reposition it &#183; hover for coordinates &#183; 0,0 = map center. Speeds are client base values (GlobalSetting). All distances/times are pure horizontal (x,y) &mdash; z is ignored; routes assume level flight at platform altitude.</div>
+<div class="row">
+<button id="bgc-btn" class="on">&#128506; Client map (exact)</button>
+<button id="undo-btn">&#8617; Undo point</button>
+<button id="reset-btn">&#10005; Reset drawing</button>
+<button id="marker-btn">&#128205; Add marker</button>
+<button id="ring-btn">&#9678; Flight rings</button>
+<button id="poly-btn">&#9634; Region volumes</button>
+<span style="font-size:12px;color:var(--muted)">Speed mode:</span>
+<button class="spd on" data-s="0">Fly 12 m/s</button>
+<button class="spd" data-s="1">Sprint-fly 16 m/s</button>
+<button class="spd" data-s="2">Dash-fly 24 m/s</button>
+</div>
+<div class="row" id="mkbar" style="display:none;gap:6px;align-items:center">
+<span style="font-size:11.5px;color:var(--muted)">marker style:</span>
+<span id="mk-colors"></span><span style="width:8px"></span><span id="mk-icons"></span>
+</div>
+<svg id="map" viewBox="0 0 1000 1000"></svg>
+<div class="legend">
+<span><span class="dot" style="background:#7e57c2"></span>Artifact teleporter (Abysscore)</span>
+<span><span class="dot" style="background:#2e7d32"></span>Light base (you)</span>
+<span><span class="dot" style="background:#c62828"></span>Dark base (enemy)</span>
+<span><span class="dot" style="background:var(--acc)"></span>Your route</span>
+<span style="color:#3d7ea6">&#9634; dashed = subzone volume</span>
+<span style="color:#e65100">&#9679; marker (click to rename &#183; right-click or alt+click to delete &#183; style picker in Add-marker mode; saved)</span>
+<span style="color:#00838f">&#9678; flight ring (crossing a segment boosts it &#215;1.5 when shown)</span>
+</div>
+<div class="panel">
+<div class="box"><h3>Cursor</h3><div id="coord">&#8212; m, &#8212; m</div><div class="note">grid: 100 m minor / 500 m major</div></div>
+<div class="box"><h3>Route</h3><div id="route">no waypoints yet</div></div>
+<div class="box"><h3>Estimated time &#183; all modes</h3><div id="times"></div></div>
+</div>
+</div>
+<script>
+const DATA = {"Abyss_Reshanta_A":{"id":20,"tps":[{"k":"Abyss_Reshanta_A_Dark_Respawn","x":544.8,"y":-531.7,"z":204.4},{"k":"Abyss_Reshanta_A_Dark_StartPoint","x":544.8,"y":-531.7,"z":204.4},{"k":"Abyss_Reshanta_A_Light_Respawn","x":-492.4,"y":487.0,"z":203.7},{"k":"Abyss_Reshanta_A_Light_StartPoint","x":-492.4,"y":487.0,"z":203.7},{"k":"Abyss_Reshanta_A_Respawn","x":-458.9,"y":456.6,"z":203.7},{"k":"TeleportAbysscore_AR1_D_ARR_01","x":-28.3,"y":-7.2,"z":405.6},{"k":"TeleportAbysscore_AR1_D_STI_01","x":-351.8,"y":-234.2,"z":305.4},{"k":"TeleportAbysscore_AR1_D_WSA_01","x":368.4,"y":166.4,"z":360.2},{"k":"TeleportAbysscore_AR1_L_ARR_01","x":-28.3,"y":-7.2,"z":405.6},{"k":"TeleportAbysscore_AR1_L_STI_01","x":-351.8,"y":-234.2,"z":305.4},{"k":"TeleportAbysscore_AR1_L_WSA_01","x":368.4,"y":166.4,"z":360.2},{"k":"TeleportArtifact_AR1_D_01","x":556.8,"y":-543.9,"z":213.3},{"k":"TeleportArtifact_AR1_D_STI_01","x":-617.0,"y":-100.8,"z":409.9},{"k":"TeleportArtifact_AR1_D_STI_02","x":-135.8,"y":-249.9,"z":390.9},{"k":"TeleportArtifact_AR1_D_WSA_01","x":270.7,"y":602.7,"z":365.6},{"k":"TeleportArtifact_AR1_D_WSA_02","x":469.4,"y":296.6,"z":423.3},{"k":"TeleportArtifact_AR1_L_01","x":-522.3,"y":516.9,"z":212.6},{"k":"TeleportArtifact_AR1_L_STI_01","x":-114.6,"y":-464.1,"z":389.9},{"k":"TeleportArtifact_AR1_L_STI_02","x":-473.4,"y":-369.7,"z":410.6},{"k":"TeleportArtifact_AR1_L_WSA_01","x":629.5,"y":469.6,"z":432.0},{"k":"TeleportArtifact_AR1_L_WSA_02","x":202.5,"y":218.6,"z":395.6}],"labels":[{"k":"TeminonLanding","x":-453.0,"y":441.6},{"k":"PrimumLanding","x":479.8,"y":-467.9},{"k":"DevastatedRemnants","x":-218.9,"y":223.0},{"k":"BlackFragments","x":245.4,"y":-244.5},{"k":"SulfurTreeIsland","x":-457.8,"y":-386.6},{"k":"WingsofSielArchipelago","x":430.2,"y":316.5},{"k":"RootsofReshanta","x":2.2,"y":-129.6}],"subzones":[{"k":"Abyss_Reshanta_A_Subzone","n":5,"sid":600},{"k":"BlackShardZone_Subzone","n":30,"sid":608},{"k":"BlackShardZone_Subzone_A","n":34,"sid":609},{"k":"BlackShardZone_Subzone_B","n":40,"sid":610},{"k":"BlackShardZone_Subzone_C","n":53,"sid":611},{"k":"BlackShardZone_Subzone_D","n":37,"sid":612},{"k":"DestroyedDebris_Subzone","n":53,"sid":603},{"k":"DestroyedDebris_Subzone_A","n":32,"sid":604},{"k":"DestroyedDebris_Subzone_B","n":37,"sid":605},{"k":"DestroyedDebris_Subzone_C","n":24,"sid":606},{"k":"DestroyedDebris_Subzone_D","n":19,"sid":607},{"k":"PrimumLanding_Subzone","n":33,"sid":602},{"k":"RootsofReshanta_Subzone","n":20,"sid":622},{"k":"SulfurTreeIsland_Subzone","n":32,"sid":613},{"k":"SulfurTreeIsland_Subzone_A","n":89,"sid":614},{"k":"SulfurTreeIsland_Subzone_B","n":115,"sid":615},{"k":"SulfurTreeIsland_Subzone_C","n":30,"sid":616},{"k":"TeminonLanding_Subzone","n":33,"sid":601},{"k":"WingsofSielArchipelago_Subzone","n":39,"sid":617},{"k":"WingsofSielArchipelago_Subzone_A","n":94,"sid":618},{"k":"WingsofSielArchipelago_Subzone_B","n":66,"sid":619},{"k":"WingsofSielArchipelago_Subzone_C","n":25,"sid":620},{"k":"WingsofSielArchipelago_Subzone_D","n":63,"sid":621}],"spawns":1933,"waypoints":99,"polygons":[{"k":"Abyss_Reshanta_A_Subzone","pts":[[1017.2,1018.4],[1020.0,-1019.8],[-1014.5,-1014.1],[-1015.7,1015.9],[1017.2,1018.4]]},{"k":"BlackShardZone_Subzone","pts":[[351.4,-45.0],[387.1,-55.0],[434.4,-8.3],[494.7,-19.2],[558.8,-81.7],[528.6,-164.3],[483.9,-170.6],[486.2,-216.5],[465.7,-272.3],[390.7,-320.3],[339.1,-354.3],[290.7,-377.9],[297.2,-435.9],[288.5,-482.2],[237.0,-511.5],[154.2,-494.5],[122.7,-453.7],[69.6,-431.7],[50.6,-380.8],[31.0,-337.7],[26.8,-290.0],[55.2,-251.0],[57.9,-212.4],[94.8,-193.2],[143.9,-173.0],[172.3,-152.7],[211.0,-99.8],[238.7,-85.1],[285.5,-65.2],[351.4,-45.0]]},{"k":"BlackShardZone_Subzone_A","pts":[[149.3,-214.9],[184.7,-189.0],[200.0,-178.9],[204.6,-166.4],[209.0,-159.0],[212.3,-154.8],[219.6,-151.3],[224.5,-145.1],[227.1,-143.8],[229.9,-143.9],[239.5,-133.2],[254.0,-136.4],[263.4,-143.4],[272.5,-143.8],[293.0,-151.5],[306.8,-171.9],[315.6,-192.0],[318.6,-206.0],[331.2,-214.8],[339.6,-241.7],[338.4,-255.9],[347.4,-270.1],[350.5,-290.8],[321.9,-311.3],[319.9,-325.4],[283.0,-343.5],[261.8,-342.0],[256.0,-335.2],[231.1,-340.5],[199.4,-337.6],[182.8,-313.9],[139.2,-266.4],[129.5,-230.2],[149.3,-214.9]]},{"k":"BlackShardZone_Subzone_B","pts":[[206.4,-348.3],[245.4,-362.6],[252.2,-370.6],[258.1,-383.4],[267.0,-394.0],[268.5,-401.6],[268.1,-408.4],[265.1,-415.9],[269.5,-419.6],[269.7,-422.0],[273.4,-428.8],[271.4,-434.1],[268.9,-435.1],[266.0,-434.7],[265.6,-435.6],[265.9,-438.7],[264.8,-442.3],[267.6,-444.1],[267.1,-445.1],[261.6,-449.2],[260.1,-452.3],[265.3,-459.0],[260.9,-465.9],[257.1,-464.6],[249.6,-473.2],[248.7,-481.2],[241.4,-483.4],[217.9,-470.5],[202.2,-468.9],[192.1,-470.7],[172.5,-464.5],[162.8,-452.5],[159.0,-439.3],[134.8,-404.7],[134.6,-376.6],[151.1,-344.2],[159.4,-340.7],[168.0,-343.8],[184.1,-343.3],[206.4,-348.3]]},{"k":"BlackShardZone_Subzone_C","pts":[[335.4,-174.3],[338.5,-173.6],[339.4,-171.4],[341.4,-169.3],[343.2,-168.6],[345.7,-167.1],[351.6,-164.2],[356.8,-163.9],[361.8,-157.1],[364.4,-155.2],[375.2,-145.2],[375.7,-141.6],[380.4,-135.4],[392.9,-130.2],[408.8,-134.1],[419.5,-143.6],[422.9,-142.5],[431.0,-152.9],[441.1,-157.3],[442.8,-163.8],[449.7,-167.7],[457.6,-176.4],[459.5,-184.6],[465.2,-193.1],[463.4,-196.8],[471.0,-208.6],[469.3,-214.5],[460.5,-218.1],[456.3,-224.9],[449.4,-232.9],[441.2,-232.2],[433.0,-244.5],[423.9,-248.8],[412.0,-249.5],[400.4,-247.0],[396.7,-253.2],[385.6,-260.0],[382.1,-260.2],[379.7,-263.4],[375.4,-265.2],[368.5,-266.0],[363.7,-261.3],[363.9,-257.0],[359.0,-249.9],[347.0,-245.9],[338.2,-218.5],[333.5,-213.0],[326.1,-203.5],[326.7,-199.3],[328.9,-194.5],[329.1,-189.5],[333.4,-181.8],[335.4,-174.3]]},{"k":"BlackShardZone_Subzone_D","pts":[[356.2,-66.9],[364.2,-68.6],[367.6,-77.8],[368.6,-84.5],[365.9,-88.7],[369.1,-91.9],[374.7,-92.6],[386.5,-102.9],[385.4,-105.9],[387.4,-117.9],[384.5,-131.0],[376.6,-136.7],[368.6,-150.0],[361.2,-154.8],[358.0,-159.4],[351.7,-163.9],[344.5,-167.4],[329.2,-174.4],[324.9,-172.5],[313.9,-176.5],[308.7,-171.7],[307.4,-162.8],[301.1,-156.5],[294.9,-145.7],[293.9,-138.2],[285.0,-129.2],[285.1,-126.6],[296.3,-102.2],[295.6,-98.7],[304.9,-79.3],[322.9,-80.2],[325.4,-74.4],[333.0,-79.3],[334.7,-68.8],[341.7,-67.3],[346.2,-71.8],[356.2,-66.9]]},{"k":"DestroyedDebris_Subzone","pts":[[-227.1,370.9],[-212.6,401.2],[-193.6,414.2],[-202.7,433.8],[-203.8,457.2],[-234.5,473.0],[-245.5,509.1],[-231.9,528.3],[-190.0,539.9],[-171.3,532.6],[-144.1,542.3],[-105.7,535.5],[-92.2,512.8],[-97.3,483.6],[-107.1,470.3],[-107.8,457.0],[-103.4,446.5],[-85.0,429.0],[-73.5,415.8],[-45.0,367.2],[-45.2,333.9],[-62.5,299.8],[-93.7,265.8],[-94.5,228.9],[-96.1,156.7],[-141.8,106.1],[-183.9,103.5],[-197.6,84.2],[-192.6,40.5],[-233.8,-5.0],[-296.0,-5.8],[-335.2,-1.3],[-357.4,-23.5],[-393.9,-18.4],[-428.5,-5.3],[-445.1,24.7],[-461.1,46.5],[-501.9,48.5],[-519.1,87.6],[-508.1,116.8],[-480.8,146.8],[-458.6,166.7],[-462.3,201.1],[-483.8,268.5],[-463.0,303.7],[-420.1,305.5],[-381.2,269.7],[-342.8,277.5],[-309.2,306.2],[-310.0,340.1],[-305.5,384.6],[-276.6,409.2],[-227.1,370.9]]},{"k":"DestroyedDebris_Subzone_A","pts":[[-293.2,280.5],[-275.3,300.3],[-247.3,304.4],[-224.9,302.0],[-209.0,306.9],[-204.5,311.1],[-180.7,312.4],[-168.1,300.0],[-165.8,291.8],[-160.5,283.7],[-161.1,279.5],[-151.7,264.9],[-148.5,256.4],[-131.0,248.3],[-117.8,221.0],[-125.6,188.0],[-135.7,177.0],[-169.4,130.1],[-217.9,130.4],[-244.4,124.5],[-272.8,140.7],[-276.3,150.9],[-285.5,165.1],[-281.4,179.4],[-289.7,190.9],[-291.4,200.1],[-296.9,202.6],[-300.1,216.8],[-308.3,234.2],[-308.4,244.1],[-312.1,251.1],[-293.2,280.5]]},{"k":"DestroyedDebris_Subzone_B","pts":[[-209.5,345.5],[-209.2,359.4],[-199.4,387.9],[-183.8,396.1],[-162.8,400.2],[-160.7,407.0],[-152.7,410.5],[-151.1,416.1],[-142.5,415.5],[-138.1,411.1],[-130.8,404.8],[-112.5,401.5],[-99.9,404.4],[-93.3,401.0],[-88.2,393.7],[-85.5,386.3],[-78.2,379.8],[-76.7,374.6],[-68.2,370.5],[-66.9,363.4],[-68.2,357.1],[-74.3,352.3],[-66.4,340.0],[-68.0,324.5],[-80.9,310.7],[-100.6,310.4],[-111.2,306.7],[-115.9,294.1],[-129.2,284.4],[-145.9,286.7],[-153.7,291.5],[-161.5,305.2],[-174.1,321.3],[-179.7,323.1],[-197.6,320.0],[-206.5,329.3],[-209.5,345.5]]},{"k":"DestroyedDebris_Subzone_C","pts":[[-372.2,246.5],[-365.6,252.2],[-339.9,253.7],[-319.2,243.1],[-310.2,229.9],[-308.9,199.2],[-299.7,183.1],[-296.7,173.5],[-303.5,160.0],[-320.7,141.0],[-339.7,128.5],[-353.1,129.0],[-367.8,141.6],[-405.3,148.2],[-420.8,172.5],[-421.9,187.0],[-428.1,194.4],[-425.3,208.1],[-415.3,227.4],[-408.0,234.0],[-397.6,236.7],[-393.2,239.4],[-390.1,247.5],[-372.2,246.5]]},{"k":"DestroyedDebris_Subzone_D","pts":[[-295.6,120.3],[-275.6,127.9],[-258.5,126.0],[-251.9,121.2],[-237.7,118.9],[-226.7,105.8],[-224.2,94.8],[-211.9,70.0],[-218.1,53.3],[-242.5,38.0],[-264.0,13.9],[-303.3,14.6],[-313.5,34.2],[-335.1,52.7],[-340.1,75.0],[-337.4,101.8],[-327.5,107.5],[-314.4,125.4],[-295.6,120.3]]},{"k":"PrimumLanding_Subzone","pts":[[360.4,-524.5],[363.8,-490.3],[373.8,-457.4],[390.0,-427.2],[412.0,-400.4],[438.3,-379.0],[468.5,-362.6],[501.3,-352.9],[535.5,-349.5],[569.6,-352.8],[602.5,-362.8],[632.8,-379.1],[659.1,-400.7],[680.9,-427.2],[697.1,-457.5],[707.1,-490.3],[710.4,-524.6],[707.1,-558.5],[697.1,-591.5],[681.0,-621.7],[659.2,-648.2],[632.7,-670.0],[602.4,-686.2],[569.6,-696.1],[535.5,-699.5],[501.5,-696.2],[468.4,-686.2],[438.2,-670.0],[411.7,-648.3],[390.0,-621.8],[373.7,-591.4],[363.8,-558.6],[360.4,-524.5]]},{"k":"RootsofReshanta_Subzone","pts":[[-160.1,34.6],[-119.3,74.3],[-95.7,88.8],[-82.6,103.0],[-72.0,128.2],[-61.3,141.8],[-8.3,172.7],[61.9,182.9],[132.4,121.5],[176.6,68.3],[179.5,-58.4],[115.3,-134.5],[59.9,-154.7],[5.4,-177.8],[-35.6,-168.9],[-122.9,-148.8],[-153.4,-123.0],[-166.4,-81.0],[-170.0,-4.7],[-160.1,34.6]]},{"k":"SulfurTreeIsland_Subzone","pts":[[-423.2,-31.0],[-287.3,-49.4],[-226.9,-108.7],[-182.1,-173.3],[-138.5,-182.4],[-86.4,-181.3],[-40.3,-215.3],[-40.8,-258.5],[-31.7,-306.9],[-15.2,-354.4],[-24.5,-405.0],[-38.9,-442.1],[-45.7,-474.2],[-58.7,-512.5],[-107.5,-533.8],[-176.7,-514.4],[-238.5,-516.6],[-280.8,-550.8],[-408.1,-553.3],[-466.3,-476.2],[-518.5,-460.2],[-553.0,-425.7],[-588.8,-378.0],[-637.2,-348.6],[-694.3,-334.5],[-770.2,-210.9],[-751.8,-139.9],[-719.3,-103.0],[-713.7,-71.1],[-680.9,-35.8],[-558.6,-18.8],[-423.2,-31.0]]},{"k":"SulfurTreeIsland_Subzone_A","pts":[[-259.8,-130.6],[-258.6,-140.4],[-242.5,-166.4],[-257.9,-178.9],[-250.8,-194.2],[-256.3,-207.3],[-244.4,-233.3],[-234.1,-234.0],[-227.8,-241.0],[-225.6,-250.7],[-212.5,-252.4],[-198.1,-265.8],[-189.5,-261.6],[-176.2,-238.2],[-162.6,-237.8],[-146.9,-217.4],[-126.6,-201.3],[-109.4,-199.5],[-87.8,-210.5],[-83.9,-225.6],[-90.2,-251.4],[-101.3,-266.9],[-125.8,-281.4],[-98.7,-287.7],[-78.4,-276.6],[-66.3,-277.1],[-56.3,-305.7],[-55.4,-326.2],[-43.4,-370.9],[-51.9,-388.8],[-82.1,-390.1],[-87.9,-399.5],[-103.0,-410.1],[-104.3,-417.7],[-101.4,-433.3],[-103.6,-441.6],[-95.4,-447.8],[-86.9,-445.4],[-74.3,-448.9],[-67.6,-474.4],[-72.6,-489.7],[-83.2,-504.3],[-95.7,-511.8],[-110.4,-510.7],[-115.3,-502.4],[-122.5,-500.4],[-132.0,-490.8],[-142.1,-474.0],[-139.6,-458.5],[-133.0,-447.1],[-141.0,-439.6],[-150.4,-429.8],[-162.3,-416.4],[-171.0,-423.1],[-174.5,-424.0],[-184.6,-429.3],[-186.6,-434.5],[-198.1,-440.2],[-211.0,-427.1],[-212.8,-402.3],[-219.3,-400.4],[-248.0,-390.4],[-264.7,-381.3],[-276.5,-358.5],[-284.4,-329.6],[-282.4,-300.1],[-321.2,-309.1],[-349.2,-308.7],[-381.0,-309.4],[-411.6,-288.6],[-413.2,-260.2],[-399.6,-239.6],[-384.5,-229.9],[-386.6,-204.9],[-395.4,-182.2],[-419.7,-164.1],[-423.7,-160.0],[-427.9,-151.3],[-425.7,-145.8],[-418.0,-137.9],[-412.3,-123.4],[-408.9,-117.9],[-415.4,-78.7],[-411.9,-74.3],[-384.7,-72.1],[-356.0,-85.0],[-308.9,-81.2],[-283.0,-112.7],[-259.8,-130.6]]},{"k":"SulfurTreeIsland_Subzone_B","pts":[[-641.3,-126.2],[-655.6,-112.7],[-663.5,-96.3],[-662.4,-81.5],[-665.1,-75.9],[-662.3,-67.2],[-653.7,-65.5],[-644.0,-60.1],[-639.2,-60.6],[-624.5,-57.4],[-621.9,-60.4],[-615.7,-63.1],[-610.9,-63.3],[-607.2,-67.7],[-605.7,-70.7],[-603.0,-71.4],[-597.6,-79.2],[-596.6,-89.3],[-600.4,-93.2],[-599.1,-97.0],[-599.1,-101.3],[-596.3,-100.6],[-595.2,-97.5],[-590.7,-95.2],[-586.5,-97.5],[-582.9,-96.3],[-578.0,-97.0],[-575.4,-98.3],[-573.5,-97.3],[-573.9,-92.6],[-572.1,-86.1],[-572.9,-78.8],[-570.8,-71.6],[-564.9,-68.5],[-560.3,-64.5],[-559.6,-59.4],[-555.1,-56.7],[-546.0,-56.7],[-538.6,-55.0],[-532.5,-56.4],[-526.8,-55.3],[-511.6,-61.3],[-500.0,-57.3],[-490.0,-58.2],[-476.8,-57.0],[-463.8,-59.1],[-459.3,-63.8],[-458.3,-67.2],[-450.2,-68.7],[-424.6,-83.3],[-420.1,-96.9],[-411.7,-110.1],[-410.2,-117.4],[-419.1,-136.7],[-427.8,-145.2],[-430.4,-149.9],[-424.6,-160.4],[-421.6,-163.0],[-416.9,-172.4],[-402.9,-181.2],[-393.5,-191.4],[-389.4,-216.8],[-394.4,-232.5],[-405.1,-239.0],[-416.1,-260.8],[-415.1,-272.4],[-425.7,-292.0],[-442.6,-303.8],[-453.7,-338.8],[-452.3,-349.1],[-446.8,-371.2],[-458.7,-397.9],[-462.9,-418.2],[-498.7,-429.8],[-521.4,-404.8],[-517.8,-369.8],[-496.0,-327.7],[-502.3,-329.2],[-512.1,-323.0],[-514.5,-317.2],[-521.1,-312.0],[-518.4,-298.0],[-522.8,-292.9],[-529.0,-305.0],[-540.9,-313.4],[-549.8,-310.5],[-558.1,-296.3],[-565.6,-304.8],[-574.7,-306.6],[-584.7,-316.2],[-596.7,-315.3],[-604.9,-309.9],[-608.4,-294.9],[-617.2,-290.6],[-633.0,-294.3],[-643.9,-303.4],[-670.0,-301.4],[-673.9,-287.8],[-681.5,-283.6],[-696.4,-262.2],[-714.2,-239.2],[-715.5,-211.2],[-723.8,-199.6],[-727.1,-186.1],[-724.5,-176.9],[-726.9,-167.2],[-712.3,-151.0],[-708.2,-144.0],[-700.2,-140.9],[-693.9,-126.1],[-660.6,-127.4],[-651.7,-133.7],[-647.5,-131.0],[-643.9,-131.7],[-641.3,-126.2]]},{"k":"SulfurTreeIsland_Subzone_C","pts":[[-265.5,-382.0],[-248.2,-391.1],[-223.1,-400.2],[-220.4,-401.6],[-226.7,-418.2],[-227.8,-432.4],[-241.2,-468.6],[-277.7,-485.7],[-302.2,-514.2],[-334.2,-517.7],[-350.3,-506.6],[-381.6,-502.6],[-412.4,-485.3],[-413.2,-465.4],[-423.6,-456.5],[-425.2,-443.1],[-432.8,-430.9],[-427.1,-409.5],[-439.2,-364.1],[-446.8,-350.1],[-451.8,-338.7],[-441.0,-304.5],[-424.0,-293.2],[-412.5,-289.4],[-381.0,-311.1],[-349.3,-310.0],[-321.4,-310.1],[-285.2,-330.0],[-277.4,-358.7],[-265.5,-382.0]]},{"k":"TeminonLanding_Subzone","pts":[[-665.3,491.7],[-661.9,525.9],[-652.0,558.8],[-635.8,589.0],[-613.8,615.9],[-587.5,637.2],[-557.2,653.6],[-524.4,663.4],[-490.2,666.7],[-456.1,663.4],[-423.3,653.4],[-393.0,637.1],[-366.6,615.5],[-344.8,589.0],[-328.7,558.7],[-318.7,525.9],[-315.3,491.6],[-318.7,457.7],[-328.7,424.8],[-344.8,394.6],[-366.5,368.1],[-393.1,346.3],[-423.3,330.1],[-456.2,320.1],[-490.3,316.8],[-524.2,320.1],[-557.3,330.0],[-587.5,346.2],[-614.0,367.9],[-635.8,394.4],[-652.0,424.8],[-661.9,457.6],[-665.3,491.7]]},{"k":"WingsofSielArchipelago_Subzone","pts":[[413.8,33.7],[345.0,-5.8],[301.6,43.4],[252.4,64.0],[228.4,150.0],[163.1,152.9],[45.8,216.9],[-7.9,234.1],[-36.4,284.6],[-27.0,365.7],[14.3,435.8],[-4.3,493.5],[28.9,546.7],[145.2,568.1],[187.9,602.3],[208.8,664.8],[289.0,691.5],[345.9,646.8],[322.6,563.1],[403.6,549.7],[464.4,530.7],[455.1,468.9],[469.9,428.3],[499.0,494.8],[596.8,563.6],[689.1,571.4],[740.0,498.4],[830.4,453.7],[858.6,380.7],[828.1,302.5],[813.1,219.0],[834.8,151.2],[712.7,15.3],[593.1,20.2],[559.4,73.2],[515.3,109.9],[490.3,38.1],[447.6,18.4],[413.8,33.7]]},{"k":"WingsofSielArchipelago_Subzone_A","pts":[[173.1,517.8],[192.9,539.3],[201.1,526.7],[209.1,518.4],[221.9,523.7],[253.9,499.9],[273.5,484.2],[280.3,465.3],[332.0,458.2],[313.0,479.7],[319.1,500.0],[340.4,508.8],[353.8,503.6],[384.6,512.3],[403.8,510.1],[421.4,513.4],[432.2,508.8],[432.5,493.0],[413.2,442.4],[430.9,412.3],[434.0,388.7],[448.9,375.6],[467.3,333.7],[472.9,326.2],[469.4,319.3],[445.1,306.6],[433.8,285.7],[417.3,287.3],[414.3,278.3],[422.6,269.8],[424.5,261.7],[420.0,256.2],[409.4,249.8],[389.1,251.1],[386.7,254.4],[382.1,253.1],[378.5,248.1],[362.9,245.5],[363.4,239.0],[355.3,230.8],[348.9,225.0],[327.4,218.7],[324.7,216.8],[321.9,209.6],[323.0,207.1],[322.9,201.0],[318.6,200.2],[318.5,197.0],[314.2,197.6],[309.5,200.7],[306.7,200.2],[297.1,202.1],[290.4,201.9],[284.6,204.7],[277.9,200.7],[258.6,197.6],[250.9,200.3],[227.0,190.0],[220.8,190.5],[209.6,182.2],[202.4,178.9],[179.7,178.3],[167.1,186.4],[164.0,195.3],[166.2,203.3],[163.2,211.6],[166.1,221.5],[160.5,226.7],[153.7,214.0],[133.7,211.4],[95.2,226.8],[92.2,256.4],[63.6,261.0],[50.5,275.1],[8.7,293.4],[30.1,353.9],[24.6,364.1],[29.6,389.5],[41.3,405.8],[66.7,429.6],[67.5,443.9],[59.3,450.7],[61.1,462.3],[49.1,468.4],[38.6,481.8],[47.8,496.9],[66.8,502.6],[71.5,488.8],[77.0,494.5],[73.8,506.9],[83.9,514.5],[129.1,514.7],[133.7,528.3],[173.1,517.8]]},{"k":"WingsofSielArchipelago_Subzone_B","pts":[[512.4,153.3],[508.4,186.9],[499.2,193.4],[493.2,217.8],[478.7,230.0],[473.7,248.4],[470.0,244.4],[461.6,242.0],[454.8,249.4],[440.9,258.2],[434.1,285.6],[445.3,306.3],[469.8,318.6],[482.8,316.9],[494.9,307.9],[487.0,333.1],[491.4,351.9],[479.7,386.8],[517.5,458.1],[582.4,465.1],[585.6,476.1],[600.0,486.5],[612.2,519.7],[652.4,529.3],[675.3,490.1],[682.5,485.2],[708.4,487.1],[712.9,479.7],[737.1,456.9],[739.0,447.6],[750.2,450.2],[768.7,438.5],[780.2,445.0],[797.9,429.8],[799.8,401.4],[811.4,391.3],[816.8,375.3],[803.3,356.9],[789.2,328.1],[771.0,319.1],[782.1,302.5],[778.7,290.6],[759.9,283.3],[761.8,276.5],[752.6,259.6],[747.1,238.1],[751.2,218.3],[766.4,215.0],[780.8,202.0],[784.5,175.6],[777.6,157.0],[757.7,131.5],[736.6,119.1],[730.3,99.3],[695.1,60.1],[668.0,48.8],[644.1,72.5],[630.2,94.5],[612.7,75.9],[592.3,80.3],[585.3,121.9],[571.9,141.8],[540.0,137.5],[538.7,156.8],[519.4,147.0],[512.4,153.3]]},{"k":"WingsofSielArchipelago_Subzone_C","pts":[[278.3,400.3],[269.3,388.9],[264.5,380.8],[276.5,363.5],[275.5,342.7],[264.6,327.1],[260.0,325.4],[248.6,323.4],[239.8,321.3],[233.8,318.3],[229.1,310.9],[221.3,313.6],[211.3,319.2],[205.5,325.8],[195.5,324.8],[193.4,327.6],[199.1,344.2],[215.7,381.7],[239.6,418.6],[257.1,432.3],[255.2,423.9],[259.4,415.3],[263.9,410.4],[266.9,403.9],[278.3,400.3]]},{"k":"WingsofSielArchipelago_Subzone_D","pts":[[376.4,236.2],[395.3,237.0],[399.1,243.4],[403.5,245.7],[408.2,249.1],[416.9,249.1],[419.4,246.9],[427.5,238.6],[429.4,224.4],[436.8,208.8],[444.4,202.1],[458.6,196.0],[465.5,172.0],[477.7,171.8],[488.0,154.0],[481.3,116.0],[473.0,96.6],[472.3,72.5],[467.6,59.6],[442.8,55.9],[425.4,77.8],[416.7,78.9],[408.8,66.3],[385.9,59.2],[368.1,40.6],[348.6,41.4],[339.1,73.4],[322.6,86.3],[294.1,92.4],[287.5,109.7],[294.8,117.7],[291.1,132.2],[283.9,137.3],[281.5,145.3],[265.9,159.8],[264.2,172.1],[275.7,182.2],[285.7,186.2],[296.8,184.8],[313.8,189.7],[320.1,189.9],[327.1,179.1],[330.2,179.1],[331.2,185.8],[325.9,195.6],[323.6,201.0],[323.1,207.3],[323.3,211.3],[325.1,216.7],[327.6,218.4],[329.8,218.9],[348.9,224.7],[348.5,222.8],[350.0,221.6],[351.4,221.8],[353.1,220.2],[356.0,219.8],[359.1,222.6],[364.2,223.5],[367.5,227.5],[370.6,228.9],[371.3,232.9],[376.4,236.2]]}]}};
+const MODES=[['Fly',12,2.5],['Sprint-fly',16,5.0],['Dash-fly',24,20.0]];
+let cur='Abyss_Reshanta_A', bgcOn=true, path=[], spd=0, showPoly=false;
+let markers=JSON.parse(localStorage.getItem('a2-markers-v1')||'[]'), markerMode=false, showRings=false;
+let mkColor='#e65100', mkIcon='';
+const MKCOLORS=['#e65100','#c62828','#2e7d32','#1565c0','#7e57c2','#00838f','#f9a825','#455a64'];
+const MKICONS=[['','circle'],['\u25A0','square'],['\u25B2','triangle'],['\u25C6','diamond'],['\u2605','star'],['\u2691','flag'],['\uD83D\uDCB0','loot'],['\u2620','danger']];
+function saveMarkers(){localStorage.setItem('a2-markers-v1',JSON.stringify(markers));}
+const RING_R=40; // ring trigger radius, m - UNVERIFIED (community rings visually ~40-60m)
+const RINGS=[[-365.0,366.3],[16.4,-283.2],[-341.2,-7.5],[-284.6,282.3],[170.5,-260.6],[325.1,-312.9],[170.3,71.3],[119.9,-453.7],[386.4,-83.5],[-75.8,125.5],[470.8,292.4],[-315.1,239.9],[252.9,-238.4],[368.6,265.2],[-208.6,-430.0],[-101.9,236.0],[572.6,268.6],[-141.3,132.3],[-440.3,-151.2],[-182.6,-68.1],[322.8,16.9],[471.1,444.3],[162.9,291.9],[227.9,-365.1],[-509.5,-339.9],[-212.4,207.8],[113.2,201.9],[-533.1,-179.5],[3.3,244.4],[-184.5,305.4],[-331.6,-214.6],[-235.0,125.8],[-258.1,-21.7],[405.5,-395.8],[241.4,114.4],[25.2,-467.4],[-374.5,107.3],[588.3,399.5],[179.7,-163.9],[-79.2,-148.1],[292.3,-133.7],[402.4,-37.9],[-66.9,430.2],[-257.1,-141.4],[322.7,245.8],[-1.0,471.3],[326.8,-241.1],[-271.9,-287.9],[264.8,411.7]];
+function ringsHit(a,b){let n=0;for(const [rx,ry] of RINGS){const dx=b.x-a.x,dy=b.y-a.y,L2=dx*dx+dy*dy;let t=L2?((rx-a.x)*dx+(ry-a.y)*dy)/L2:0;t=Math.max(0,Math.min(1,t));if(Math.hypot(a.x+dx*t-rx,a.y+dy*t-ry)<=RING_R)n++;}return n;}
+let vp=1;
+let TR={R:650};
+const svg=document.getElementById('map'),
+ coordEl=document.getElementById('coord'), routeEl=document.getElementById('route'), timesEl=document.getElementById('times');
+const NS='http://www.w3.org/2000/svg';
+const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e};
+const fmt=s=>`${Math.floor(s/60)}m${String(Math.round(s%60)).padStart(2,'0')}s`;
+function draw(){
+  svg.innerHTML='';
+  const d=DATA[cur];
+  let R=0;
+  d.polygons.forEach(pg=>pg.pts.forEach(([x,y])=>R=Math.max(R,Math.abs(x),Math.abs(y))));
+  R=Math.max(R,600)*1.08*vp;
+  const S=1000, sc=v=>S/2+v/R*(S/2-30);
+  TR={R};
+  const X=x=>sc(x), Y=y=>sc(y);
+  if(bgcOn){
+    svg.appendChild(el('image',{href:'reshanta_client_raw.png',x:X(-2040),y:Y(-2040),width:X(2040)-X(-2040),height:Y(2040)-Y(-2040),opacity:0.95}));
+  }
+  svg.appendChild(el('rect',{x:30,y:30,width:S-60,height:S-60,fill:'none',stroke:'var(--bd)','stroke-width':1.5,rx:8}));
+  for(let g2=-Math.floor(R/100)*100;g2<=R;g2+=100){
+    if(Math.abs(g2)>R)continue;
+    const major=g2%500===0;
+    svg.appendChild(el('line',{x1:X(g2),y1:30,x2:X(g2),y2:S-30,stroke:major?'var(--muted)':'var(--bd)','stroke-width':major?1.2:0.6,opacity:major?0.55:0.3}));
+    svg.appendChild(el('line',{x1:30,y1:Y(g2),x2:S-30,y2:Y(g2),stroke:major?'var(--muted)':'var(--bd)','stroke-width':major?1.2:0.6,opacity:major?0.55:0.3}));
+    if(major&&g2!==0){
+      const tx=el('text',{x:X(g2)+3,y:S-36,fill:'var(--muted)','font-size':11});tx.textContent=g2;svg.appendChild(tx);
+      const ty=el('text',{x:X(0)+5,y:Y(g2)-4,fill:'var(--muted)','font-size':11});ty.textContent=g2;svg.appendChild(ty);
+    }
+  }
+  if(showPoly) d.polygons.forEach(pg=>{
+    if(pg.pts.length>60)return;
+    svg.appendChild(el('polygon',{points:pg.pts.map(([x,y])=>`${X(x)},${Y(y)}`).join(' '),fill:'none',stroke:'#3d7ea6','stroke-width':1,opacity:0.75,'stroke-dasharray':'5 4'}));
+  });
+  d.labels.forEach(l=>{
+    const t=el('text',{x:X(l.x),y:Y(l.y),'text-anchor':'middle',fill:'var(--muted)','font-size':14,'font-style':'italic','font-weight':600,opacity:0.9});
+    t.textContent=l.k.replace(/^AR\d_/,'').replace(/([a-z])([A-Z])/g,'$1 $2');svg.appendChild(t);
+  });
+  if(showRings){const rr=sc(RING_R)-sc(0);
+    RINGS.forEach(([rx,ry],i)=>{const c=el('circle',{cx:X(rx),cy:Y(ry),r:rr,fill:'#00838f','fill-opacity':0.10,stroke:'#00838f','stroke-width':1.4,'stroke-dasharray':'4 3'});
+      const tt=el('title',{});tt.textContent=`Flight ring #${i+1}  (${rx}, ${ry})`;c.appendChild(tt);svg.appendChild(c);});}
+  markers.forEach((m,i)=>{
+    const col=m.color||'#e65100', ic=m.icon||'';
+    const g=el('g',{});
+    if(ic){g.appendChild(el('circle',{cx:X(m.x),cy:Y(m.y),r:10,fill:'var(--card)',stroke:col,'stroke-width':2,'fill-opacity':0.85}));
+      const gl=el('text',{x:X(m.x),y:Y(m.y)+6,'text-anchor':'middle',fill:col,'font-size':15,'font-weight':700});gl.textContent=ic;g.appendChild(gl);}
+    else g.appendChild(el('circle',{cx:X(m.x),cy:Y(m.y),r:7,fill:col,stroke:'var(--card)','stroke-width':2}));
+    const t=el('text',{x:X(m.x),y:Y(m.y)-(ic?18:12),'text-anchor':'middle',fill:col,'font-size':13,'font-weight':700});t.textContent=m.label;g.appendChild(t);
+    const c2=el('text',{x:X(m.x),y:Y(m.y)+26,'text-anchor':'middle',fill:'var(--muted)','font-size':11});c2.textContent=`(${Math.round(m.x)}, ${Math.round(m.y)}) m`;g.appendChild(c2);
+    svg.appendChild(g);});
+  if(path.length){
+    svg.appendChild(el('polyline',{points:path.map(p=>`${X(p.x)},${Y(p.y)}`).join(' '),fill:'none',stroke:'var(--acc)','stroke-width':3,'stroke-linejoin':'round','stroke-linecap':'round',opacity:0.9}));
+    path.forEach((p,i)=>{const c=el('circle',{cx:X(p.x),cy:Y(p.y),r:i===0?7:5,fill:'var(--acc)',stroke:'var(--card)','stroke-width':2});const tt=el('title',{});tt.textContent=`#${i+1} (${Math.round(p.x)}, ${Math.round(p.y)})`;c.appendChild(tt);svg.appendChild(c);});
+  }
+  const seen={};
+  d.tps.forEach(p=>{
+    const isCore=/Abysscore/i.test(p.k);
+    const isSpawn=/_(Light|Dark)_StartPoint$/.test(p.k);
+    if(isCore){
+      const key=p.k.replace(/_(L|D)_/,'_X_');
+      if(seen[key])return; seen[key]=1;
+      const c=el('circle',{cx:X(p.x),cy:Y(p.y),r:9,fill:'#7e57c2',stroke:'var(--card)','stroke-width':2.5});
+      const tt=el('title',{});tt.textContent=`Artifact teleporter (${p.k.match(/ARR|STI|WSA/)?.[0]})  (${p.x}, ${p.y})`;c.appendChild(tt);svg.appendChild(c);
+      const t=el('text',{x:X(p.x),y:Y(p.y)-14,'text-anchor':'middle',fill:'#7e57c2','font-size':12,'font-weight':700});t.textContent=p.k.match(/ARR|STI|WSA/)?.[0]||'core';svg.appendChild(t);
+    } else if(isSpawn){
+      const light=/Light/.test(p.k);
+      const c=el('circle',{cx:X(p.x),cy:Y(p.y),r:10,fill:light?'#2e7d32':'#c62828',stroke:'var(--card)','stroke-width':2.5});
+      const tt=el('title',{});tt.textContent=`${light?'Light':'Dark'} base spawn  (${p.x}, ${p.y})`;c.appendChild(tt);svg.appendChild(c);
+      const t=el('text',{x:X(p.x),y:Y(p.y)-16,'text-anchor':'middle',fill:light?'#2e7d32':'#c62828','font-size':12,'font-weight':700});t.textContent=light?'LIGHT base':'DARK base';svg.appendChild(t);
+    }
+  });
+  updatePanel();
+}
+function dist2(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function updatePanel(){
+  if(!path.length){routeEl.textContent='no waypoints yet';timesEl.innerHTML='<span style="color:var(--muted)">click map to start</span>';return;}
+  let tot=0,ttot=0,ringSegs=0;const segs=[];
+  for(let i=1;i<path.length;i++){const dd=dist2(path[i-1],path[i]);segs.push(dd);tot+=dd;
+    const n=showRings?ringsHit(path[i-1],path[i]):0;
+    if(n)ringSegs++;ttot+=dd/(n?1.5:1);}
+  const leg=segs.map((s2,i)=>`#${i+1}\u2192${i+2}: ${s2.toFixed(0)} m`).join('<br>');
+  const dd=dist2(path[0],path[path.length-1]);
+  routeEl.innerHTML=`<b>${path.length}</b> waypoints &#183; total <b>${tot.toFixed(0)} m</b>`+
+   (path.length>1?` &#183; straight-line start\u2194end ${dd.toFixed(0)} m`:'')+
+   (segs.length>1?`<div class="note">${leg}</div>`:'')+
+   (showRings?`<div class="note" style="color:#00838f">\u25ce ${ringSegs}/${segs.length} segments cross a flight ring \u00d71.5 boost</div>`:'');
+  let h='<table><tr><th>mode</th><th>time</th><th>FP est.</th></tr>';
+  MODES.forEach(([nm,v,fp],i)=>{
+    const t=ttot/v, e=t*fp;
+    h+=`<tr${i===spd?' style="font-weight:700;color:var(--acc)"':''}><td>${nm}</td><td>${fmt(t)}</td><td>${e.toFixed(0)}</td></tr>`;
+  });
+  h+='</table><div class="note">FP = duration &#215; fp_cost/1000 (fly 2.5/s &#183; sprint 5/s &#183; dash 20/s)<br>rate semantics UNVERIFIED &#8212; ratios (1:2:8) are GAME DATA, absolute scale is not.'+(showRings?'<br>Ring boost &#215;1.5 and 40 m trigger radius: UNVERIFIED (no client speed field found; model per-player observation).':'')+'</div>';
+  timesEl.innerHTML=h;
+}
+function svgToWorld(evt){
+  const r=svg.getBoundingClientRect();
+  const vx=(evt.clientX-r.left)/r.width*1000, vy=(evt.clientY-r.top)/r.height*1000;
+  const half=1000/2-30;
+  return {x:(vx-500)/half*TR.R, y:(vy-500)/half*TR.R};
+}
+let dragIdx=-1,downPt=null,movedFar=false;
+function nearWaypoint(p){let bi=-1,bd=1e9;const thr=TR.R*0.02;
+  path.forEach((w,i)=>{const d=Math.hypot(w.x-p.x,w.y-p.y);if(d<thr&&d<bd){bd=d;bi=i}});return bi;}
+function nearMarker(p){let bi=-1,bd=1e9;const thr=TR.R*0.025;
+  markers.forEach((m,i)=>{const d=Math.hypot(m.x-p.x,m.y-p.y);if(d<thr&&d<bd){bd=d;bi=i}});return bi;}
+svg.addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  const p=svgToWorld(e);
+  const mi=nearMarker(p);
+  if(mi>=0){ // click marker: rename; alt+click: delete
+    if(e.altKey){markers.splice(mi,1);saveMarkers();}
+    else{const lbl=prompt('Rename marker:',markers[mi].label);if(lbl!==null){markers[mi].label=lbl||'Marker';saveMarkers();}}
+    draw();return;}
+  if(markerMode){const lbl=prompt('Marker label:','Marker '+(markers.length+1));
+    if(lbl!==null){markers.push({x:+p.x.toFixed(1),y:+p.y.toFixed(1),label:lbl||'Marker',color:mkColor,icon:mkIcon});saveMarkers();draw();}return;}
+  downPt=p;movedFar=false;dragIdx=nearWaypoint(p);
+});
+window.addEventListener('mouseup',e=>{
+  if(e.button!==0)return;
+  if(dragIdx>=0){dragIdx=-1;downPt=null;return;}
+  if(downPt&&!movedFar){const p=svgToWorld(e);path.push(p);}
+  downPt=null;draw();});
+svg.addEventListener('contextmenu',e=>{const p=svgToWorld(e);const mi=nearMarker(p);
+  if(mi>=0){e.preventDefault();markers.splice(mi,1);saveMarkers();draw();}});
+svg.addEventListener('mousemove',e=>{const p=svgToWorld(e);coordEl.textContent=`${Math.round(p.x)} m, ${Math.round(p.y)} m`;
+  if(dragIdx>=0){if(Math.hypot(p.x-path[dragIdx].x,p.y-path[dragIdx].y)>TR.R*0.004)movedFar=true;
+    path[dragIdx].x=p.x;path[dragIdx].y=p.y;draw();}});
+svg.addEventListener('mouseleave',()=>coordEl.textContent='\u2014 m, \u2014 m');
+document.getElementById('undo-btn').onclick=()=>{path.pop();draw();};
+document.getElementById('reset-btn').onclick=()=>{path=[];draw();};
+document.getElementById('bgc-btn').onclick=e=>{bgcOn=!bgcOn;e.target.classList.toggle('on',bgcOn);draw();};
+document.getElementById('poly-btn').onclick=e=>{showPoly=!showPoly;e.target.classList.toggle('on',showPoly);draw();};
+document.getElementById('marker-btn').onclick=e=>{markerMode=!markerMode;e.target.classList.toggle('on',markerMode);
+ svg.style.cursor=markerMode?'copy':'crosshair';document.getElementById('mkbar').style.display=markerMode?'flex':'none';};
+function paintPal(){document.querySelectorAll('#mk-colors button').forEach((b,i)=>b.classList.toggle('on',MKCOLORS[i]===mkColor));
+ document.querySelectorAll('#mk-icons button').forEach(b=>b.classList.toggle('on',b.dataset.g===mkIcon));}
+{const cw=document.getElementById('mk-colors');
+ MKCOLORS.forEach(c=>{const b=document.createElement('button');b.textContent='\u25CF';b.style.color=c;b.title=c;b.onclick=()=>{mkColor=c;paintPal()};cw.appendChild(b);});
+ const iw=document.getElementById('mk-icons');
+ MKICONS.forEach(([g,nm])=>{const b=document.createElement('button');b.textContent=g||'\u25CB';b.title=nm;b.dataset.g=g;iw.appendChild(b);b.onclick=()=>{mkIcon=g;paintPal()};});}
+paintPal();
+document.getElementById('ring-btn').onclick=e=>{showRings=!showRings;e.target.classList.toggle('on',showRings);draw();};
+document.querySelectorAll('.spd').forEach(b=>b.onclick=()=>{spd=+b.dataset.s;document.querySelectorAll('.spd').forEach(x=>x.classList.toggle('on',x===b));updatePanel();});
+const tb=document.getElementById('theme-btn');
+function applyTheme(){tb.textContent=document.body.classList.contains('light')?'\uD83C\uDF19 Dark':'\u2600 Light';}
+tb.onclick=()=>{document.body.classList.toggle('light');localStorage.setItem('a2-abyss-theme',document.body.classList.contains('light')?'l':'d');applyTheme();};
+if(localStorage.getItem('a2-abyss-theme')=='l')document.body.classList.add('light');
+applyTheme();draw();
+</script>
+</body>
+</html>
